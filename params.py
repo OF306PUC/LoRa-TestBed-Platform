@@ -24,4 +24,4 @@ HOP_LIMIT = REQUIRED_HOPS_TO_GATEWAY + 1
 
 # GPS settings (optional)
 GPS_ENABLED = True
-GPS_UPDATE_INTERVAL = 300               # [seconds]
+GPS_UPDATE_INTERVAL = 300               # [seconds]  # <-- TODO: check if the change takes effect (in config.yaml appears to have the following interval: 120 seconds, which is the default value)

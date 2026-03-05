@@ -59,6 +59,9 @@ def main():
     run(f"meshtastic --set telemetry.device_update_interval {node_params.TELEMETRY_DEV_UPDATE_INTERVAL}")
     run(f"meshtastic --set telemetry.environment_update_interval {node_params.TELEMETRY_ENV_UPDATE_INTERVAL}")
 
+    # GPS config
+    run(f"meshtastic --set gps.update_interval {node_params.GPS_UPDATE_INTERVAL}")
+
     # Reboot to apply changes
     run("meshtastic --reboot")
 
