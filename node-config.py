@@ -2,7 +2,7 @@ import subprocess
 import time
 import json 
 import argparse
-import params as node_params
+import param_node as node_params
 
 def run(cmd):
     print(f"\nRunning: {cmd}")
@@ -10,10 +10,10 @@ def run(cmd):
     print(result.stdout)
     if result.returncode != 0:
         print("ERROR:", result.stderr)
-    time.sleep(1.0)  
+    time.sleep(5)  
 
 def load_config(node_id): 
-    with open("mesh_config.json", "r") as f:
+    with open("../mesh_config.json", "r") as f:
         data = json.load(f)
     
     nodes = data["nodes_cfg"]
@@ -60,7 +60,7 @@ def main():
     run(f"meshtastic --set telemetry.environment_update_interval {node_params.TELEMETRY_ENV_UPDATE_INTERVAL}")
 
     # GPS config
-    run(f"meshtastic --set gps.update_interval {node_params.GPS_UPDATE_INTERVAL}")
+    run(f"meshtastic --set position.gps_update_interval {node_params.GPS_UPDATE_INTERVAL}")
 
     # Reboot to apply changes
     run("meshtastic --reboot")

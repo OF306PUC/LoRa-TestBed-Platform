@@ -11,7 +11,7 @@ REBROADCAST_MODE = "LOCAL_ONLY"
 
 # Telemetry settings
 TELEMETRY_ENV_MEAS_ENABLED = True
-TELEMETRY_DEV_UPDATE_INTERVAL = 0
+TELEMETRY_DEV_UPDATE_INTERVAL = 120     # [seconds]
 TELEMETRY_ENV_UPDATE_INTERVAL = 120     # [seconds]
 
 # Sensing node role choice
@@ -23,5 +23,4 @@ REQUIRED_HOPS_TO_GATEWAY = 2            # <-- set this per node (e.g., node1=2, 
 HOP_LIMIT = REQUIRED_HOPS_TO_GATEWAY + 1
 
 # GPS settings (optional)
-GPS_ENABLED = True
-GPS_UPDATE_INTERVAL = 300               # [seconds]  # <-- TODO: check if the change takes effect (in config.yaml appears to have the following interval: 120 seconds, which is the default value)
+GPS_UPDATE_INTERVAL = 300               # [seconds]  

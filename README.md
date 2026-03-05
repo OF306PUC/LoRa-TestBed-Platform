@@ -25,11 +25,11 @@ The network consists of **3 SensCAP Solar Node P1 Pro sensor nodes** and **1 LIL
 
 ### Node Architecture
 
-![SensCAP Node Architecture](docs/senscap-node.png)
+![SensCAP Node Architecture](docs/sensecap-node.drawio.png)
 
 ### Mesh Network Topology
 
-![Mesh Network Graph](docs/senscap-mesh.png)
+![Mesh Network Graph](docs/sensecap-mesh-mesh.drawio.png)
 
 ---
 
