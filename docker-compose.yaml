@@ -25,7 +25,7 @@ services:
 
   mosquitto:
     image: eclipse-mosquitto:2.0
-    container_name: brisa-iot-mqtt-broker
+    container_name: lora-testbed-mqtt-broker
     volumes:
       - ./mqtt:/mosquitto/config
       - ./data:/mosquitto/data

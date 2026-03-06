@@ -64,6 +64,7 @@ class MeshReceiver:
         sender_num = packet.get("from")
 
         if not self._is_valid(sender_id, sender_num, packet.get("id")):
+            print(f"[MESH] Dropping packet from {sender_id} (num={sender_num})")
             return
 
         decoded = packet["decoded"]
@@ -72,6 +73,7 @@ class MeshReceiver:
 
         label       = self.known_nodes[sender_id]
         telem       = decoded.get("telemetry", {})
+        print(f"\nTelemetry from {sender_id or sender_num}: {telem}")
         device_ts   = telem.get("time", int(time.time()))
         received_at = datetime.now(timezone.utc).isoformat()
 
