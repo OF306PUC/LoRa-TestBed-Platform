@@ -1,0 +1,123 @@
+import time
+import json
+import paho.mqtt.client as mqtt
+
+
+class MQTTConnector:
+    """
+    Manages connection to the MQTT broker and message publishing.
+    Publish-only — no subscriptions or incoming message handling.
+    Handles automatic reconnection on disconnect.
+
+    Attributes:
+        broker_address (str): The address of the MQTT broker.
+        port (int): The port to connect to the MQTT broker.
+        client_id (str): The client ID for the MQTT connection.
+        client (mqtt.Client): The Paho MQTT client instance.
+    """
+
+    TOPIC_DEVICE = "lora-testbed/{node_label}/device"
+    TOPIC_ENV    = "lora-testbed/{node_label}/environment"
+
+    def __init__(self, broker_address: str, port: int = 1883, client_id: str = ""):
+        """
+        Initialize the MQTTConnector.
+
+        Args:
+            broker_address (str): The address of the MQTT broker.
+            port (int, optional): The port to connect to. Defaults to 1883.
+            client_id (str, optional): The client ID for the connection. Defaults to "".
+        """
+        self.broker_address = broker_address
+        self.port           = port
+        self.client_id      = client_id
+        self.client         = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id)
+        self.client.on_connect    = self.on_connect
+        self.client.on_disconnect = self.on_disconnect
+
+    # ── Callbacks ─────────────────────────────────────────────────────────────
+
+    def on_connect(self, client, userdata, flags, rc, properties):
+        """
+        Called when the client receives a CONNACK response from the broker.
+
+        Args:
+            client: The client instance for this callback.
+            userdata: Private user data.
+            flags: Response flags sent by the broker.
+            rc: The connection result code.
+            properties: MQTT v5.0 properties.
+        """
+        if rc == 0:
+            print("[MQTT] Connected to broker!")
+        else:
+            print(f"[MQTT] Failed to connect, return code {rc}")
+
+    def on_disconnect(self, client, userdata, flags, rc, properties):
+        """
+        Called when the client disconnects from the broker.
+        Automatically retries until reconnected.
+
+        Args:
+            client: The client instance for this callback.
+            userdata: Private user data.
+            flags: Response flags sent by the broker.
+            rc: The disconnection result code.
+            properties: MQTT v5.0 properties.
+        """
+        print(f"[MQTT] Disconnected (rc={rc}). Reconnecting...")
+        while True:
+            try:
+                client.reconnect()
+                break
+            except Exception as e:
+                print(f"[MQTT] Reconnect failed: {e}. Retrying in 5s...")
+                time.sleep(5)
+
+    # ── Connection ────────────────────────────────────────────────────────────
+
+    def connect(self):
+        """Connect to the MQTT broker and start background network loop."""
+        self.client.connect(self.broker_address, self.port, keepalive=60)
+        self.client.loop_start()
+
+    def close(self):
+        """Stop the network loop and disconnect from the broker."""
+        self.client.loop_stop()
+        self.client.disconnect()
+        print("[MQTT] Disconnected from broker.")
+
+    # ── Publishing ────────────────────────────────────────────────────────────
+
+    def publish(self, topic: str, message: str):
+        """
+        Publish a raw string message to a topic.
+
+        Args:
+            topic (str): The topic to publish to.
+            message (str): The message payload to publish.
+        """
+        self.client.publish(topic, message)
+        print(f"[MQTT] → {topic}: {message}")
+
+    def publish_device(self, node_label: str, payload: dict):
+        """
+        Publish device telemetry for a node.
+
+        Args:
+            node_label (str): Human-readable node label (e.g. "node-1").
+            payload (dict): Device telemetry data.
+        """
+        topic = self.TOPIC_DEVICE.format(node_label=node_label)
+        self.publish(topic, json.dumps(payload))
+
+    def publish_env(self, node_label: str, payload: dict):
+        """
+        Publish environment telemetry for a node.
+
+        Args:
+            node_label (str): Human-readable node label (e.g. "node-1").
+            payload (dict): Environment telemetry data.
+        """
+        topic = self.TOPIC_ENV.format(node_label=node_label)
+        self.publish(topic, json.dumps(payload))
