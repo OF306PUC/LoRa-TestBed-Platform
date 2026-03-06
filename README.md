@@ -48,18 +48,20 @@ LoRa-TestBed-Platform/
 ├── docs/                         # Documentation and reference diagrams
 │
 ├── gateway/                      # Gateway-specific configuration
-│   ├── param_receiver.py         # Parameters for the LILYGO gateway
-│   ├── receiver-config.py        # Script to configure the gateway via Meshtastic CLI
-│   └── receiver_config.yaml      # Reference YAML config for the gateway
-│
-├── node-config.py                # Configures sensor nodes via Meshtastic CLI
-├── param_node.py                 # Shared parameters and constants for sensor nodes
-├── check-node-info.py            # Utility: reads and prints node info over serial
-│
-├── config.yaml                   # Reference YAML config for sensor nodes
-├── firmware_inital_config.yaml   # Initial firmware configuration (pre-channel setup)
-├── mesh_config.json              # Per-node mesh parameters (roles, hop limits, IDs)
-├── requirements.txt              # Python dependencies
+|   ├── config/
+│   │    ├── param_receiver.py         # Parameters for the LILYGO gateway
+│   │    ├── receiver-config.py        # Script to configure the gateway via Meshtastic CLI
+│   │    └── receiver_config.yaml      # Reference YAML config for the gateway
+│   ├── mesh_receiver.py
+|   ├── mqtt_connector.py
+|   ├── param.py
+|   └── receiver.py
+|
+├── node/                      # node-specific configuration
+|    ├── node-config.py                # Configures sensor nodes via Meshtastic CLI
+|    ├── param_node.py                 # Shared parameters and constants for sensor nodes
+|    ├── config.yaml                   # Reference YAML config for sensor nodes
+|    └── firmware_inital_config.yaml   # Initial firmware configuration (pre-channel setup)
 │
 ├── mqtt/
 │   └── mosquitto.conf            # Mosquitto broker configuration
@@ -69,6 +71,9 @@ LoRa-TestBed-Platform/
 │
 ├── docker-compose.yaml           # Container orchestration
 ├── configuration.env             # InfluxDB environment variables
+├── check-node-info.py            # Utility: reads and prints node info over serial
+├── mesh_config.json              # Per-node mesh parameters (roles, hop limits, IDs)
+├── requirements.txt              # Python dependencies
 │
 └── README.md
 ```
@@ -144,10 +149,6 @@ Defines each node's hardware ID, `device_role`, and `hop_limit`. Referenced at r
   }
 }
 ```
-
-### `firmware_inital_config.yaml` / `config.yaml`
-
-YAML reference configs for initial device setup and post-channel configuration respectively. Can be applied directly using the Meshtastic CLI's `--configure` flag.
 
 ---
 
@@ -229,15 +230,6 @@ python node-config.py --node-id 1   # repeat for node IDs 2, 3
 
 The node will reboot automatically once all settings are applied.
 
----
-
-### Step 4 — Verify Node Configuration (Optional)
-
-To confirm a node is online and readable over serial:
-
-```bash
-python check-node-info.py
-```
 
 ---
 
@@ -247,7 +239,11 @@ This section covers the steps required to bring up the full data pipeline: regis
 
 ### Stage 1 — Register a New Node in `mesh_config.json`
 
-Every physical SensCAP node must be registered before it can be configured or have its data routed correctly. When a new node is provided by SensCAP, add it to `mesh_config.json` before running any configuration scripts.
+Every physical SensCAP node must be registered before it can be configured or have its data routed correctly. When a new node is provided by SensCAP, add it to `mesh_config.json` before running any configuration scripts. In order to do that one can use the `check-node-info.py` to find node's IDs as well as confirming the node is online and readable over serial:
+
+```bash
+python check-node-info.py
+```
 
 Open `mesh_config.json` and add a new entry under `nodes_cfg`:
 
@@ -269,8 +265,6 @@ Open `mesh_config.json` and add a new entry under `nodes_cfg`:
 | `id` | Hardware ID printed on the device or readable via `check-node-info.py`. Format: `!xxxxxxxx` |
 | `hop_limit` | Number of hops to gateway + 1. Nodes adjacent to the gateway use `2`; farther nodes use `3` |
 | `device_role` | `SENSOR` for nodes with active telemetry; `CLIENT` for relay or secondary nodes |
-
-Once registered, follow Steps 1–4 in [Getting Started](#getting-started) to flash, configure, and verify the new node.
 
 ---
 
