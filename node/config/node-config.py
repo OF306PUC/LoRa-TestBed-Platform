@@ -4,16 +4,41 @@ import json
 import argparse
 import param_node as node_params
 
-def run(cmd):
+MAX_RETRIES = 3
+RETRY_DELAY = 10  # seconds to wait before retrying
+
+# Keywords that indicate a transient serial error worth retrying
+RETRYABLE_ERRORS = [
+    "couldn't be opened",
+    "Input/output error",
+    "OS Error",
+    "serial device",
+    "write failed",
+]
+
+def is_retryable(stderr: str, stdout: str) -> bool:
+    combined = (stderr + stdout).lower()
+    return any(keyword.lower() in combined for keyword in RETRYABLE_ERRORS)
+
+def run(cmd, retries=MAX_RETRIES):
     print(f"\nRunning: {cmd}")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    print(result.stdout)
-    if result.returncode != 0:
-        print("ERROR:", result.stderr)
-    time.sleep(5)  
+    for attempt in range(1, retries + 1):
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        print(result.stdout)
+        if result.returncode == 0 and not is_retryable(result.stderr, result.stdout):
+            time.sleep(2)
+            return  # success
+        # Something went wrong
+        print(f"ERROR (attempt {attempt}/{retries}):", result.stderr or result.stdout)
+        if attempt < retries:
+            print(f"Retrying in {RETRY_DELAY}s...")
+            time.sleep(RETRY_DELAY)
+        else:
+            print(f"Command failed after {retries} attempts. Continuing...")
+            time.sleep(2)
 
 def load_config(node_id): 
-    with open("../mesh_config.json", "r") as f:
+    with open("mesh_config.json", "r") as f:
         data = json.load(f)
     
     nodes = data["nodes_cfg"]
@@ -54,7 +79,9 @@ def main():
     run(f"meshtastic --set device.role {device_role}") # it varies by node position.
 
     # Telemetry config
+    DEV_MEAS = str(node_params.TELEMETRY_DEV_MEAS_ENABLED).lower()
     ENV_MEAS = str(node_params.TELEMETRY_ENV_MEAS_ENABLED).lower()
+    run(f"meshtastic --set telemetry.device_telemetry_enabled {DEV_MEAS}")
     run(f"meshtastic --set telemetry.environment_measurement_enabled {ENV_MEAS}")
     run(f"meshtastic --set telemetry.device_update_interval {node_params.TELEMETRY_DEV_UPDATE_INTERVAL}")
     run(f"meshtastic --set telemetry.environment_update_interval {node_params.TELEMETRY_ENV_UPDATE_INTERVAL}")

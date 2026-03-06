@@ -1,7 +1,7 @@
 {
     "nodes_cfg": {
-        "1": {"id": "!0b64122b", "hop_limit": 3, "device_role": "SENSOR"},
-        "2": {"id": "!6c73ff1c", "hop_limit": 2, "device_role": "CLIENT"},
-        "3": {"id": "!9d84gg2d", "hop_limit": 2, "device_role": "CLIENT"}
+        "!0b64122b": {"id": "1", "hop_limit": 3, "device_role": "SENSOR"},
+        "!7c70da02": {"id": "2", "hop_limit": 2, "device_role": "CLIENT"},
+        "!32fe0d4e": {"id": "3", "hop_limit": 2, "device_role": "CLIENT"}
     } 
 }
