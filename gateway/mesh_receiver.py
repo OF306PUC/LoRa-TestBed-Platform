@@ -28,9 +28,9 @@ class MeshReceiver:
         self.my_id       = None
         self.my_num      = None
 
-    def connect(self):
+    def connect(self, devPath: str):
         """Opens the serial connection to the Meshtastic gateway."""
-        self.iface  = meshtastic.serial_interface.SerialInterface()
+        self.iface  = meshtastic.serial_interface.SerialInterface(devPath=devPath)
         me          = self.iface.getMyNodeInfo()
         self.my_id  = me["user"]["id"]
         self.my_num = me["num"]
