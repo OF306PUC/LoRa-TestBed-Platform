@@ -337,7 +337,7 @@ curl -G 'http://localhost:8086/query' \
 |---|---|
 | Temperature | ✅ Active |
 | Humidity | ✅ Active |
-| Power / Battery metrics (`usbPower`, `isCharging`) | 🔧 In progress |
+| Power / Battery metrics (`voltage`, `batteryLevel`) | ✅ Active |
 | GPS coordinates | 🔧 Planned |
 
 > ⚠️ USB power and charging state metrics (`usbPower`, `isCharging`) are currently being debugged for correct readings.
