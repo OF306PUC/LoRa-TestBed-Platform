@@ -7,6 +7,8 @@ import param_node as node_params
 MAX_RETRIES = 3
 RETRY_DELAY = 10  # seconds to wait before retrying
 
+MESH_CONFIG_PATH = "../../mesh_config.json"  # path to the mesh configuration file
+
 # Keywords that indicate a transient serial error worth retrying
 RETRYABLE_ERRORS = [
     "couldn't be opened",
@@ -38,12 +40,12 @@ def run(cmd, retries=MAX_RETRIES):
             time.sleep(2)
 
 def load_config(node_id): 
-    with open("mesh_config.json", "r") as f:
+    with open(MESH_CONFIG_PATH, "r") as f:
         data = json.load(f)
     
     nodes = data["nodes_cfg"]
     if node_id not in nodes: 
-        raise ValueError(f"Node ID {node_id} not found in mesh_config.json")
+        raise ValueError(f"Node ID {node_id} not found in {MESH_CONFIG_PATH}")
     return nodes[node_id]
 
 def main():
@@ -58,15 +60,18 @@ def main():
 
     print("Starting node configuration using meshtastic CLI...")
 
-    # LoRa config: region and preset (optional, but recommended to set explicitly)
-    run(f"meshtastic --set lora.region {node_params.LORA_REGION}")
-    run(f"meshtastic --set lora.modem_preset {node_params.LORA_PRESET}")
+    # LoRa config: region, preset, hop limit
+    run(
+        f"meshtastic --set lora.region {node_params.LORA_REGION}"
+        f" --set lora.modem_preset {node_params.LORA_PRESET}"
+        f" --set lora.hop_limit {hop_limit}"
+    )
 
-    # LoRa hop limit first
-    run(f"meshtastic --set lora.hop_limit {hop_limit}")
-
-    # Extra isolation: only rebroadcast packets from *your* configured channels
-    run(f"meshtastic --set device.rebroadcast_mode {node_params.REBROADCAST_MODE}")
+    # Device config: rebroadcast mode and role (role varies by node position)
+    run(
+        f"meshtastic --set device.rebroadcast_mode {node_params.REBROADCAST_MODE}"
+        f" --set device.role {device_role}"
+    )
 
     # Channel config (this may trigger radio re-init)
     run(
@@ -75,19 +80,22 @@ def main():
         f'--ch-index {node_params.CHANNEL_IDX}'
     )
 
-    # Device role
-    run(f"meshtastic --set device.role {device_role}") # it varies by node position.
-
     # Telemetry config
     DEV_MEAS = str(node_params.TELEMETRY_DEV_MEAS_ENABLED).lower()
     ENV_MEAS = str(node_params.TELEMETRY_ENV_MEAS_ENABLED).lower()
-    run(f"meshtastic --set telemetry.device_telemetry_enabled {DEV_MEAS}")
-    run(f"meshtastic --set telemetry.environment_measurement_enabled {ENV_MEAS}")
-    run(f"meshtastic --set telemetry.device_update_interval {node_params.TELEMETRY_DEV_UPDATE_INTERVAL}")
-    run(f"meshtastic --set telemetry.environment_update_interval {node_params.TELEMETRY_ENV_UPDATE_INTERVAL}")
+    run(
+        f"meshtastic --set telemetry.device_telemetry_enabled {DEV_MEAS}"
+        f" --set telemetry.environment_measurement_enabled {ENV_MEAS}"
+        f" --set telemetry.device_update_interval {node_params.TELEMETRY_DEV_UPDATE_INTERVAL}"
+        f" --set telemetry.environment_update_interval {node_params.TELEMETRY_ENV_UPDATE_INTERVAL}"
+    )
 
     # GPS config
-    run(f"meshtastic --set position.gps_update_interval {node_params.GPS_UPDATE_INTERVAL}")
+    run(
+        f"meshtastic --set position.gps_mode {node_params.GPS_MODE}"
+        f" --set position.gps_update_interval {node_params.GPS_UPDATE_INTERNAL_INTERVAL}"
+        f" --set position.position_broadcast_secs {node_params.GPS_UPDATE_BROADCAST_INTERVAL}"
+    )
 
     # Reboot to apply changes
     run("meshtastic --reboot")

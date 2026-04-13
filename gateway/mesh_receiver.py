@@ -1,9 +1,8 @@
 import time
-from datetime import datetime, timezone
+import collections
 import meshtastic
 import meshtastic.serial_interface
 from pubsub import pub
-
 from mqtt_connector import MQTTConnector
 
 
@@ -15,15 +14,12 @@ class MeshReceiver:
 
     SEEN_MAX = 50
 
+    _APP_FIELDS = ["TELEMETRY_APP", "POSITION_APP"]
+
     def __init__(self, mqtt: MQTTConnector, known_nodes: dict):
-        """
-        Args:
-            mqtt (MQTTConnector): Connected MQTT client for publishing.
-            known_nodes (dict): Map of node_id -> label, e.g. {"!0b64122b": "node-1"}.
-        """
         self.mqtt        = mqtt
         self.known_nodes = known_nodes
-        self.seen_ids    = set()
+        self.seen_ids    = collections.deque(maxlen=self.SEEN_MAX)
         self.iface       = None
         self.my_id       = None
         self.my_num      = None
@@ -64,21 +60,25 @@ class MeshReceiver:
         sender_num = packet.get("from")
 
         if not self._is_valid(sender_id, sender_num, packet.get("id")):
-            print(f"[MESH] Dropping packet from {sender_id} (num={sender_num})")
             return
 
-        decoded = packet["decoded"]
-        if decoded.get("portnum") != "TELEMETRY_APP":
-            return
-
+        decoded     = packet["decoded"]
         label       = self.known_nodes[sender_id]
-        telem       = decoded.get("telemetry", {})
-        print(f"\nTelemetry from {sender_id or sender_num}: {telem}")
-        device_ts   = telem.get("time", int(time.time()))
-        received_at = datetime.now(timezone.utc).isoformat()
+        received_at = time.time()
 
-        self._handle_device_telemetry(sender_id, label, telem, device_ts, received_at)
-        self._handle_env_telemetry(sender_id, label, telem, device_ts, received_at)
+        if decoded.get("portnum") not in self._APP_FIELDS:
+            return
+
+        if decoded.get("portnum") == "POSITION_APP":
+            pos       = decoded.get("position", {})
+            device_ts = pos.get("time", int(time.time()))
+            self._handle_position(sender_id, label, pos, device_ts, received_at)
+
+        if decoded.get("portnum") == "TELEMETRY_APP":
+            telem     = decoded.get("telemetry", {})
+            device_ts = telem.get("time", int(time.time()))
+            self._handle_device_telemetry(sender_id, label, telem, device_ts, received_at)
+            self._handle_env_telemetry(sender_id, label, telem, device_ts, received_at)
 
     def _is_valid(self, sender_id: str, sender_num: int, packet_id) -> bool:
         """Returns False if the packet should be dropped."""
@@ -89,61 +89,53 @@ class MeshReceiver:
         if packet_id is not None:
             if packet_id in self.seen_ids:
                 return False
-            self.seen_ids.add(packet_id)
-            if len(self.seen_ids) > self.SEEN_MAX:
-                self.seen_ids.clear()
+            self.seen_ids.append(packet_id)
         return True
 
     # ── Telemetry parsers ─────────────────────────────────────────────────────
 
-    def _handle_device_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: str):
+    def _handle_position(self, node_id: str, label: str, pos: dict, device_ts: int, received_at: float):
+        payload = {
+            "node_id":     node_id,
+            "node_label":  label,
+            "device_ts":   device_ts,   # node clock (Unix seconds) — stored as a DB field
+            "received_at": received_at, # gateway wall clock (Unix seconds)
+            "latitude":    pos.get("latitude"),
+            "longitude":   pos.get("longitude"),
+            "altitude":    pos.get("altitude"),
+        }
+        print(f"\n[POS] Position update from {label} ({node_id})")
+        self.mqtt.publish_position(label, payload)
+
+    def _handle_device_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: float):
         device = telem.get("deviceMetrics", {})
         if not device:
             return
-
         payload = {
             "node_id":        node_id,
             "node_label":     label,
-            "device_ts":      device_ts,
-            "received_at":    received_at,
+            "device_ts":      device_ts,   # node clock (Unix seconds) — stored as a DB field
+            "received_at":    received_at, # gateway wall clock (Unix seconds)
             "battery_level":  device.get("batteryLevel"),
             "voltage":        device.get("voltage"),
             "channel_util":   device.get("channelUtilization"),
             "air_util_tx":    device.get("airUtilTx"),
             "uptime_seconds": device.get("uptimeSeconds"),
-            "usb_power":      device.get("usbPower"),
-            "is_charging":    device.get("isCharging"),
         }
-
-        print(f"\n[DEVICE] {label} ({node_id})")
-        print(f"    device_ts:   {device_ts}")
-        print(f"    received_at: {received_at}")
-        for k, v in payload.items():
-            if k not in ("node_id", "node_label", "device_ts", "received_at"):
-                print(f"    {k}: {v}")
-
+        print(f"\n[DEVICE] Device telemetry from {label} ({node_id})")
         self.mqtt.publish_device(label, payload)
 
-    def _handle_env_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: str):
+    def _handle_env_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: float):
         env = telem.get("environmentMetrics", {})
         if not env:
             return
-
         payload = {
             "node_id":     node_id,
             "node_label":  label,
-            "device_ts":   device_ts,
-            "received_at": received_at,
+            "device_ts":   device_ts,   # node clock (Unix seconds) — stored as a DB field
+            "received_at": received_at, # gateway wall clock (Unix seconds)
             "temperature": env.get("temperature"),
             "humidity":    env.get("relativeHumidity"),
-            "pressure":    env.get("barometricPressure"),
         }
-
-        print(f"\n[ENV] {label} ({node_id})")
-        print(f"    device_ts:   {device_ts}")
-        print(f"    received_at: {received_at}")
-        for k, v in payload.items():
-            if k not in ("node_id", "node_label", "device_ts", "received_at"):
-                print(f"    {k}: {v}")
-
+        print(f"\n[ENV] Environment telemetry from {label} ({node_id})")
         self.mqtt.publish_env(label, payload)

@@ -1,5 +1,6 @@
 import time
 import json
+import threading
 import paho.mqtt.client as mqtt
 
 
@@ -16,6 +17,7 @@ class MQTTConnector:
         client (mqtt.Client): The Paho MQTT client instance.
     """
 
+    TOPIC_POSITION = "lora-testbed/{node_label}/position"
     TOPIC_DEVICE = "lora-testbed/{node_label}/device"
     TOPIC_ENV    = "lora-testbed/{node_label}/environment"
 
@@ -56,23 +58,20 @@ class MQTTConnector:
     def on_disconnect(self, client, userdata, flags, rc, properties):
         """
         Called when the client disconnects from the broker.
-        Automatically retries until reconnected.
-
-        Args:
-            client: The client instance for this callback.
-            userdata: Private user data.
-            flags: Response flags sent by the broker.
-            rc: The disconnection result code.
-            properties: MQTT v5.0 properties.
+        Schedules a non-blocking reconnect attempt so paho's network
+        thread is not blocked.
         """
-        print(f"[MQTT] Disconnected (rc={rc}). Reconnecting...")
-        while True:
-            try:
-                client.reconnect()
-                break
-            except Exception as e:
-                print(f"[MQTT] Reconnect failed: {e}. Retrying in 5s...")
-                time.sleep(5)
+        print(f"[MQTT] Disconnected (rc={rc}). Scheduling reconnect...")
+        threading.Timer(5, self._reconnect).start()
+
+    def _reconnect(self):
+        """Attempt reconnect; reschedules itself on failure."""
+        try:
+            self.client.reconnect()
+            print("[MQTT] Reconnected successfully.")
+        except Exception as e:
+            print(f"[MQTT] Reconnect failed: {e}. Retrying in 5s...")
+            threading.Timer(5, self._reconnect).start()
 
     # ── Connection ────────────────────────────────────────────────────────────
 
@@ -99,6 +98,17 @@ class MQTTConnector:
         """
         self.client.publish(topic, message)
         print(f"[MQTT] → {topic}: {message}")
+
+    def publish_position(self, node_label: str, payload: dict):
+        """
+        Publish position data for a node.
+
+        Args:
+            node_label (str): Human-readable node label (e.g. "node-1").
+            payload (dict): Position data payload.
+        """
+        topic = self.TOPIC_POSITION.format(node_label=node_label)
+        self.publish(topic, json.dumps(payload))
 
     def publish_device(self, node_label: str, payload: dict):
         """
