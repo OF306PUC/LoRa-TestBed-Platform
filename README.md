@@ -129,8 +129,8 @@ Defines each node's hardware ID, `device_role`, and `hop_limit`. Referenced at r
 ```json
 {
   "nodes_cfg": {
-    "1": {"id": "!0b64122b", "hop_limit": 3, "device_role": "SENSOR"},
-    "2": {"id": "!6c73ff1c", "hop_limit": 2, "device_role": "CLIENT"},
+    "1": {"id": "!0b64122b", "hop_limit": 3, "device_role": "CLIENT"},
+    "2": {"id": "!6c73ff1c", "hop_limit": 3, "device_role": "CLIENT"},
     "3": {"id": "!9d84gg2d", "hop_limit": 2, "device_role": "CLIENT"}
   }
 }
@@ -261,13 +261,35 @@ cd gateway && python receiver.py
 
 The receiver listens for mesh telemetry over serial and publishes to Mosquitto under `lora-testbed/<node-label>/device` and `lora-testbed/<node-label>/environment`. Telegraf writes these to InfluxDB automatically.
 
-To verify data is flowing:
+To verify data is flowing, open the InfluxDB CLI inside the container:
 
 ```bash
-curl -G 'http://localhost:8086/query' \
-  --data-urlencode "db=lora_nodes_sensors_db" \
-  --data-urlencode "q=SELECT * FROM mqtt_consumer LIMIT 10"
+docker exec -it influxdb influx
 ```
+
+Then run these queries inside the shell:
+
+```sql
+-- List available databases
+SHOW DATABASES
+
+-- Select the testbed database
+USE lora_nodes_sensors_db
+
+-- Confirm the measurement exists
+SHOW MEASUREMENTS
+
+-- Count total points written
+SELECT count("received_at") FROM mqtt_consumer
+
+-- Inspect the last 5 rows (most recent first)
+SELECT * FROM mqtt_consumer ORDER BY time DESC LIMIT 5
+
+-- Filter by a specific node
+SELECT * FROM mqtt_consumer WHERE node_id='!7c70da02' ORDER BY time DESC LIMIT 5
+```
+
+Exit the shell with `exit` or `Ctrl+D`.
 
 ---
 
@@ -298,7 +320,6 @@ All measurements are timestamped at **gateway reception time** and, when GPS is 
 - [x] Gateway configured as `CLIENT_MUTE` (receive-only)
 - [x] MQTT broker, InfluxDB, and Telegraf containerised
 - [x] GPS data collection
-- [ ] Reliable power/battery metric reporting (`usbPower`, `isCharging`)
 
 ---
 

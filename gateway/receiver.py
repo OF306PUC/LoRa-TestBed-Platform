@@ -1,6 +1,8 @@
+import os
+import sys
 import json
 import argparse
-import param as gateway_params  
+import param as gateway_params
 from mqtt_connector import MQTTConnector
 from mesh_receiver import MeshReceiver
 
@@ -12,12 +14,31 @@ def load_known_nodes(config_path: str) -> dict:
     Returns:
         dict: { "!0b64122b": "node-1", ... }
     """
-    with open(config_path, "r") as f:
-        data = json.load(f)
+    try:
+        with open(config_path, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"ERROR: Config file not found: {os.path.abspath(config_path)}")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in {config_path}: {e}")
+        sys.exit(1)
+
+    if "nodes_cfg" not in data:
+        print(f"ERROR: 'nodes_cfg' key missing in {config_path}")
+        sys.exit(1)
 
     known_nodes = {}
     for label, cfg in data["nodes_cfg"].items():
+        if "id" not in cfg:
+            print(f"WARNING: Node '{label}' missing 'id' field, skipping")
+            continue
         known_nodes[cfg["id"]] = f"node-{label}"
+
+    if not known_nodes:
+        print("ERROR: No valid nodes found in configuration")
+        sys.exit(1)
+
     return known_nodes
 
 
@@ -35,6 +56,7 @@ def main():
         broker_address=gateway_params.BROKER_ADDRESS, port=gateway_params.BROKER_PORT, client_id=gateway_params.CLIENT_ID
     )
     mqtt.connect()
+    mqtt.wait_until_connected()
 
     receiver = MeshReceiver(mqtt=mqtt, known_nodes=known_nodes)
     receiver.connect(devPath=port)

@@ -7,7 +7,7 @@ CHANNEL_PSK_B64 = "base64:9z2cyfrgTKeLdD2m0wpvJEUUh1NaHzZ05w1v1LpIEJM="
 
 # LoRa settings: region / preset
 LORA_REGION = "ANZ"
-LORA_PRESET = "MEDIUM_FAST"
+LORA_PRESET = "LONG_FAST"
 
 # Telemetry settings
 TELEMETRY_ENV_MEAS_ENABLED = False

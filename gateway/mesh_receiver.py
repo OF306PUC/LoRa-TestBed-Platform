@@ -1,5 +1,6 @@
 import time
 import collections
+import threading
 import meshtastic
 import meshtastic.serial_interface
 from pubsub import pub
@@ -12,7 +13,7 @@ class MeshReceiver:
     telemetry packets from known nodes, and publishes them to MQTT.
     """
 
-    SEEN_MAX = 50
+    SEEN_MAX = 200
 
     _APP_FIELDS = ["TELEMETRY_APP", "POSITION_APP"]
 
@@ -20,6 +21,7 @@ class MeshReceiver:
         self.mqtt        = mqtt
         self.known_nodes = known_nodes
         self.seen_ids    = collections.deque(maxlen=self.SEEN_MAX)
+        self._seen_lock  = threading.Lock()
         self.iface       = None
         self.my_id       = None
         self.my_num      = None
@@ -53,32 +55,36 @@ class MeshReceiver:
     # ── Packet handling ───────────────────────────────────────────────────────
 
     def _on_receive(self, packet, interface):
-        if not packet or "decoded" not in packet:
-            return
+        try:
+            if not packet or "decoded" not in packet:
+                return
 
-        sender_id  = packet.get("fromId")
-        sender_num = packet.get("from")
+            sender_id  = packet.get("fromId")
+            sender_num = packet.get("from")
 
-        if not self._is_valid(sender_id, sender_num, packet.get("id")):
-            return
+            if not self._is_valid(sender_id, sender_num, packet.get("id")):
+                return
 
-        decoded     = packet["decoded"]
-        label       = self.known_nodes[sender_id]
-        received_at = time.time()
+            decoded     = packet["decoded"]
+            label       = self.known_nodes[sender_id]
+            received_at = int(time.time())
 
-        if decoded.get("portnum") not in self._APP_FIELDS:
-            return
+            if decoded.get("portnum") not in self._APP_FIELDS:
+                return
 
-        if decoded.get("portnum") == "POSITION_APP":
-            pos       = decoded.get("position", {})
-            device_ts = pos.get("time", int(time.time()))
-            self._handle_position(sender_id, label, pos, device_ts, received_at)
+            if decoded.get("portnum") == "POSITION_APP":
+                pos       = decoded.get("position", {})
+                device_ts = pos.get("time", int(time.time()))
+                self._handle_position(sender_id, label, pos, device_ts, received_at)
 
-        if decoded.get("portnum") == "TELEMETRY_APP":
-            telem     = decoded.get("telemetry", {})
-            device_ts = telem.get("time", int(time.time()))
-            self._handle_device_telemetry(sender_id, label, telem, device_ts, received_at)
-            self._handle_env_telemetry(sender_id, label, telem, device_ts, received_at)
+            if decoded.get("portnum") == "TELEMETRY_APP":
+                telem     = decoded.get("telemetry", {})
+                device_ts = telem.get("time", int(time.time()))
+                self._handle_device_telemetry(sender_id, label, telem, device_ts, received_at)
+                self._handle_env_telemetry(sender_id, label, telem, device_ts, received_at)
+
+        except Exception as e:
+            print(f"[MESH] ERROR processing packet: {e}")
 
     def _is_valid(self, sender_id: str, sender_num: int, packet_id) -> bool:
         """Returns False if the packet should be dropped."""
@@ -87,55 +93,74 @@ class MeshReceiver:
         if sender_id not in self.known_nodes:
             return False
         if packet_id is not None:
-            if packet_id in self.seen_ids:
-                return False
-            self.seen_ids.append(packet_id)
+            with self._seen_lock:
+                if packet_id in self.seen_ids:
+                    return False
+                self.seen_ids.append(packet_id)
         return True
 
     # ── Telemetry parsers ─────────────────────────────────────────────────────
 
-    def _handle_position(self, node_id: str, label: str, pos: dict, device_ts: int, received_at: float):
+    def _handle_position(self, node_id: str, label: str, pos: dict, device_ts: int, received_at: int):
         payload = {
             "node_id":     node_id,
             "node_label":  label,
-            "device_ts":   device_ts,   # node clock (Unix seconds) — stored as a DB field
-            "received_at": received_at, # gateway wall clock (Unix seconds)
-            "latitude":    pos.get("latitude"),
-            "longitude":   pos.get("longitude"),
-            "altitude":    pos.get("altitude"),
+            "device_ts":   device_ts,
+            "received_at": received_at,
         }
+        for key, val in [
+            ("latitude",  pos.get("latitude")),
+            ("longitude", pos.get("longitude")),
+            ("altitude",  pos.get("altitude")),
+        ]:
+            if val is not None:
+                payload[key] = val
+            else: 
+                payload[key] = 0.0
         print(f"\n[POS] Position update from {label} ({node_id})")
         self.mqtt.publish_position(label, payload)
 
-    def _handle_device_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: float):
+    def _handle_device_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: int):
         device = telem.get("deviceMetrics", {})
         if not device:
             return
         payload = {
-            "node_id":        node_id,
-            "node_label":     label,
-            "device_ts":      device_ts,   # node clock (Unix seconds) — stored as a DB field
-            "received_at":    received_at, # gateway wall clock (Unix seconds)
-            "battery_level":  device.get("batteryLevel"),
-            "voltage":        device.get("voltage"),
-            "channel_util":   device.get("channelUtilization"),
-            "air_util_tx":    device.get("airUtilTx"),
-            "uptime_seconds": device.get("uptimeSeconds"),
+            "node_id":     node_id,
+            "node_label":  label,
+            "device_ts":   device_ts,
+            "received_at": received_at,
         }
+        for key, val in [
+            ("battery_level",  device.get("batteryLevel")),
+            ("voltage",        device.get("voltage")),
+            ("channel_util",   device.get("channelUtilization")),
+            ("air_util_tx",    device.get("airUtilTx")),
+            ("uptime_seconds", device.get("uptimeSeconds")),
+        ]:
+            if val is not None:
+                payload[key] = val
+            else: 
+                payload[key] = 0.0
         print(f"\n[DEVICE] Device telemetry from {label} ({node_id})")
         self.mqtt.publish_device(label, payload)
 
-    def _handle_env_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: float):
+    def _handle_env_telemetry(self, node_id: str, label: str, telem: dict, device_ts: int, received_at: int):
         env = telem.get("environmentMetrics", {})
         if not env:
             return
         payload = {
             "node_id":     node_id,
             "node_label":  label,
-            "device_ts":   device_ts,   # node clock (Unix seconds) — stored as a DB field
-            "received_at": received_at, # gateway wall clock (Unix seconds)
-            "temperature": env.get("temperature"),
-            "humidity":    env.get("relativeHumidity"),
+            "device_ts":   device_ts,
+            "received_at": received_at,
         }
+        for key, val in [
+            ("temperature", env.get("temperature")),
+            ("humidity",    env.get("relativeHumidity")),
+        ]:
+            if val is not None:
+                payload[key] = val
+            else: 
+                payload[key] = 0.0
         print(f"\n[ENV] Environment telemetry from {label} ({node_id})")
         self.mqtt.publish_env(label, payload)

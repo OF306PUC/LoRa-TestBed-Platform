@@ -30,10 +30,12 @@ class MQTTConnector:
             port (int, optional): The port to connect to. Defaults to 1883.
             client_id (str, optional): The client ID for the connection. Defaults to "".
         """
-        self.broker_address = broker_address
-        self.port           = port
-        self.client_id      = client_id
-        self.client         = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id)
+        self.broker_address  = broker_address
+        self.port            = port
+        self.client_id       = client_id
+        self.client          = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id)
+        self._reconnect_timer = None
+        self._connected_event = threading.Event()
         self.client.on_connect    = self.on_connect
         self.client.on_disconnect = self.on_disconnect
 
@@ -52,6 +54,7 @@ class MQTTConnector:
         """
         if rc == 0:
             print("[MQTT] Connected to broker!")
+            self._connected_event.set()
         else:
             print(f"[MQTT] Failed to connect, return code {rc}")
 
@@ -61,17 +64,30 @@ class MQTTConnector:
         Schedules a non-blocking reconnect attempt so paho's network
         thread is not blocked.
         """
+        self._connected_event.clear()
         print(f"[MQTT] Disconnected (rc={rc}). Scheduling reconnect...")
-        threading.Timer(5, self._reconnect).start()
+        self._schedule_reconnect()
+
+    def _schedule_reconnect(self):
+        if self._reconnect_timer is not None:
+            self._reconnect_timer.cancel()
+        self._reconnect_timer = threading.Timer(5, self._reconnect)
+        self._reconnect_timer.start()
 
     def _reconnect(self):
         """Attempt reconnect; reschedules itself on failure."""
         try:
             self.client.reconnect()
             print("[MQTT] Reconnected successfully.")
+            self._reconnect_timer = None
         except Exception as e:
             print(f"[MQTT] Reconnect failed: {e}. Retrying in 5s...")
-            threading.Timer(5, self._reconnect).start()
+            self._schedule_reconnect()
+
+    def wait_until_connected(self, timeout: float = 10.0):
+        """Block until the broker connection is established."""
+        if not self._connected_event.wait(timeout):
+            raise RuntimeError(f"[MQTT] Could not connect to broker at {self.broker_address}:{self.port} within {timeout}s")
 
     # ── Connection ────────────────────────────────────────────────────────────
 
@@ -96,7 +112,10 @@ class MQTTConnector:
             topic (str): The topic to publish to.
             message (str): The message payload to publish.
         """
-        self.client.publish(topic, message)
+        rc, _ = self.client.publish(topic, message, qos=1)
+        if rc != mqtt.MQTT_ERR_SUCCESS:
+            print(f"[MQTT] ERROR publishing to {topic}: rc={rc}")
+            return
         print(f"[MQTT] → {topic}: {message}")
 
     def publish_position(self, node_label: str, payload: dict):
